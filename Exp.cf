@@ -1,10 +1,10 @@
 -- Programy (programs) ------------------------------------------------
 entrypoints Program ;
 Program.   Program ::= [Global][TopDef] ;
-GlobalDef. Global ::= Type Ident "=" Expr ";" ;
-separator Global "" ;
+GlobalDef. Global ::= "global" Type Ident "=" Expr ";" ;
+separator  Global "" ;
 FnDef.	   TopDef ::= Type Ident "(" [Arg] ")" Block ;
-separator nonempty TopDef "" ;
+separator  nonempty TopDef "" ;
 Arg. 	   Arg ::= Type Ident ;
 InArg.     Arg ::= "in" Type Ident ;
 OutArg.    Arg ::= "out" Type Ident ;
