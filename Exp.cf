@@ -69,4 +69,3 @@ NE.        RelOp ::= "!=" ;
 -- Komentarze (comments) ------------------------------------------------
 comment    "//" ;
 comment    "/*" "*/" ;
-\end{lstlisting}
