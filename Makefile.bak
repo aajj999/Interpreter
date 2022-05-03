@@ -1,0 +1,20 @@
+GHC        = ghc
+HAPPY      = happy
+HAPPY_OPTS = --array --info --ghc --coerce
+ALEX       = alex
+ALEX_OPTS  = --ghc
+
+.PHONY : all clean
+
+all : Interpreter
+
+Interpreter.hs: 
+	./bnfc.sh
+
+Interpreter : Interpreter.hs
+	${GHC} ${GHC_OPTS} $@
+
+clean :
+	-rm -f *.hi *.o *.log *.aux *.dvi
+
+# EOF

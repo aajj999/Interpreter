@@ -1,1 +1,1 @@
-cat $1 | ./created-by-bnfc/TestExp
+cat $1 | ./TestExp

@@ -1,3 +1,2 @@
-cd ./created-by-bnfc
-bnfc -m ../Exp.cf
+bnfc -m --functor ./Exp.cf
 make
