@@ -14,11 +14,12 @@ import System.Environment ( getArgs )
 import System.Exit        ( exitFailure )
 import Control.Monad      ( when )
 
-import AbsAJ   ()
+import AbsAJ   (Program)
 import LexAJ   ( Token, mkPosToken )
 import ParAJ   ( pProgram, myLexer )
 import PrintAJ ( Print, printTree )
 import SkelAJ  ()
+import Interpreter (interpret)
 
 type Err        = Either String
 type ParseFun a = [Token] -> Err a
@@ -26,10 +27,10 @@ type ParseFun a = [Token] -> Err a
 putStrV :: String -> IO ()
 putStrV = putStrLn
 
-runFile :: (Print a, Show a) => ParseFun a -> FilePath -> IO ()
-runFile p f = putStrLn f >> readFile f >>= run p
+runFile :: ParseFun Program -> FilePath -> IO ()
+runFile p f = readFile f >>= run p
 
-run :: (Print a, Show a) => ParseFun a -> String -> IO ()
+run :: ParseFun Program -> String -> IO ()
 run p s =
   case p ts of
     Left err -> do
@@ -41,6 +42,7 @@ run p s =
     Right tree -> do
       putStrLn "\nParse Successful!"
       showTree tree
+      interpret tree
   where
   ts = myLexer s
   showPosToken ((l,c),t) = concat [ show l, ":", show c, "\t", show t ]

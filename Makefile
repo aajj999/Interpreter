@@ -26,6 +26,8 @@ TestAJ :  LexAJ.hs ParAJ.hs PrintAJ.hs TestAJ.hs
 	${GHC} ${GHC_OPTS} $@
 
 # Rules for building the interpreter.
+Interpreter : Interpreter.hs
+	${GHC} ${GHC_OPTS} $@
 
 interpreter : Main.hs Interpreter.hs ErrM.hs LexAJ.hs ParAJ.hs PrintAJ.hs AbsAJ.hs
 	${GHC} --make $< -o $@

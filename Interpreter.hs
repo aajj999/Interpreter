@@ -1,129 +1,190 @@
 module Interpreter where
 
-import Prelude (($), Either(..), String, (++), Show, show)
-import qualified AbsAJ
+import Prelude
+import AbsAJ
 import qualified Data.Map as Map
 import Control.Monad.Reader
 import Data.Maybe
+import Distribution.Simple.Setup (trueArg)
+import Control.Monad.Except
+import Control.Monad.State
 
-type Err = Either String
-type Result = Err String
-type Env a = Map.Map AbsAJ.Ident (AbsAJ.AJr' a)
+type Location = Int
+data Value = VInt Integer | VBool Bool | VString String
+type Variables = Map.Map Ident Location
+type Locations = Map.Map Location Value
 
-failure :: Show a => a -> Result
-failure x = Left $ "Undefined case: " ++ show x
+data Function = VFunc Type Ident [Arg] Block
+type Functions = Map.Map Ident Function
 
-interpret :: Show a => AbsAJ.Program' a -> Result
-interpret x = case x of
-  AbsAJ.Program _ globals topdefs -> transTopDefs topdefs v where
-    v = transGlobals globals Map.empty
-    
-transGlobals :: Show a => [AbsAJ.Global' a] -> Env a -> Env a
-transGlobals [] v = v
-transGlobals (x : xs) v = case x of
-  AbsAJ.GlobalDef _ t id value -> transGlobals xs v2 where
-    v2 = transGlobal x v
+type Env = (Variables, Locations, Functions)
+type AM a = ReaderT Env (ExceptT String (StateT Locations IO)) a
 
-transGlobal :: Show a => AbsAJ.Global' a -> Env a -> Env a
-transGlobal x v = case x of
-  AbsAJ.GlobalDef a_ type_ ident expr -> v' where
-    v' = Map.insert ident expr v
+err :: IO()
+err = putStrLn "Error"
 
-transTopDefs :: Show a => [AbsAJ.TopDef' a] -> Env a -> Result
-transTopDefs [] _ = failure "aaa"
+umt = "Unmatching types"
+
+env :: Variables -> Locations -> Functions -> Env
+env var loc fun = (var, loc, fun)
+
+interpret :: Program -> IO()
+interpret (Program _ globals topdefs) = do
+  evalState (transGlobals globals) (env Map.empty Map.empty)
+  put $ env Map.empty Map.empty
+  transGlobals globals
+  transTopDefs topdefs
+
+transGlobals :: [Global] -> Env -> Env
+transGlobals [] = print ""
+transGlobals (x : xs) = do
+  transGlobal x
+  transGlobals xs
+
+transGlobal :: Global -> ()
+transGlobal x  = case x of
+  GlobalDef _ t id expr -> v' where
+    v' = case transExpr expr v of
+      Nothing -> v
+      Just val -> do
+        Map.insert id val 
+
+addVariable :: Type -> Ident -> Value -> Variables -> Variables
+addVariable t id x v = Map.insert id x v
+
+
+transTopDefs :: [TopDef] -> IO()
+transTopDefs [] _ = putStrLn ""
 transTopDefs (x : xs)  v = case x of
-  AbsAJ.FnDef _a _type _ident _args _block -> do
-    res <- transTopDef x v
+  FnDef _a _type _ident _args _block -> do
+    transTopDef x v
     transTopDefs xs v
 
-transTopDef :: Show a => AbsAJ.TopDef' a -> Env a -> Result
-transTopDef x v = case x of
-  AbsAJ.FnDef _ type_ ident args block -> do
-    transType type_
-    transIdent ident
-    transArgs args
-    transBlock block
+transTopDef :: TopDef -> Env -> IO()
+transTopDef x (v, f)= case x of
+  FnDef _ type_ ident args block -> do
+    v' <- transArgs args v
+    transBlock block (v', f)
 
-transIdent :: AbsAJ.Ident -> Env a -> (Maybe (AbsAJ.AJr' a))
+transIdentFunc :: Ident -> Env -> Env
+transIdentFunc i v = v
+
+transIdent :: Ident -> Variables -> Maybe Value
 transIdent x v = case x of
-  AbsAJ.Ident string -> Map.lookup x v
+  Ident string -> Map.lookup x v
 
-transArgs :: Show a => [AbsAJ.Arg' a] -> Result
-transArgs (x : xs) = case x of
-  AbsAJ.Arg _ type_ ident -> failure ident
+transArgs :: [Arg] -> Variables -> Variables
+transArgs [] v = v
+transArgs (x : xs) v = transArgs xs v
 
-transArg :: Show a => AbsAJ.Arg' a -> Result
+transArg :: Show a => Arg' a -> IO()
 transArg x = case x of
-  AbsAJ.Arg _ type_ ident -> failure x
-  AbsAJ.InArg _ type_ ident -> failure x
-  AbsAJ.OutArg _ type_ ident -> failure x
+  Arg _ type_ ident -> err
+  InArg _ type_ ident -> err
+  OutArg _ type_ ident -> err
 
-transBlock :: Show a => AbsAJ.Block' a -> Result
-transBlock x = case x of
-  AbsAJ.Block _ stmts -> failure x
+transBlock :: Block -> Env -> IO()
+transBlock x v = case x of
+  Block _ stmts -> err
 
-transStmt :: Show a => AbsAJ.Stmt' a -> Result
+transStmt :: Show a => Stmt' a -> IO()
 transStmt x = case x of
-  AbsAJ.Empty _ -> failure x
-  AbsAJ.BStmt _ block -> failure x
-  AbsAJ.Decl _ type_ items -> failure x
-  AbsAJ.Ass _ ident expr -> failure x
-  AbsAJ.Incr _ ident -> failure x
-  AbsAJ.Decr _ ident -> failure x
-  AbsAJ.Ret _ expr -> failure x
-  AbsAJ.Cond _ expr stmt -> failure x
-  AbsAJ.CondElse _ expr stmt1 stmt2 -> failure x
-  AbsAJ.While _ expr stmt -> failure x
-  AbsAJ.SAJ _ expr -> failure x
-  AbsAJ.Print _ expr -> failure x
+  Empty _ -> err
+  BStmt _ block -> err
+  Decl _ type_ items -> err
+  Ass _ ident expr -> err
+  Incr _ ident -> err
+  Decr _ ident -> err
+  Ret _ expr -> err
+  Cond _ expr stmt -> err
+  CondElse _ expr stmt1 stmt2 -> err
+  While _ expr stmt -> err
+  SExp _ expr -> err
+  Print _ expr -> err
 
-transItem :: Show a => AbsAJ.Item' a -> Result
+transItem :: Show a => Item' a -> IO()
 transItem x = case x of
-  AbsAJ.NoInit _ ident -> failure x
-  AbsAJ.Init _ ident expr -> failure x
+  NoInit _ ident -> err
+  Init _ ident expr -> err
 
-transType :: Show a => AbsAJ.Type' a -> Result
+transType :: Show a => Type' a -> IO()
 transType x = case x of
-  AbsAJ.Int _ -> failure x
-  AbsAJ.Str _ -> failure x
-  AbsAJ.Bool _ -> failure x
-  AbsAJ.Fun _ type_ types -> failure x
+  Int _ -> err
+  Str _ -> err
+  Bool _ -> err
+  Fun _ type_ types -> err
 
-transAJr :: Show a => AbsAJ.AJr' a -> AbsAJr.Ex
-transAJr x = case x of
-  AbsAJ.EVar _ ident -> failure x
-  AbsAJ.ELitInt _ integer -> failure x
-  AbsAJ.ELitTrue _ -> failure x
-  AbsAJ.ELitFalse _ -> failure x
-  AbsAJ.EApp _ ident exprs -> failure x
-  AbsAJ.EString _ string -> failure x
-  AbsAJ.Neg _ expr -> failure x
-  AbsAJ.Not _ expr -> failure x
-  AbsAJ.EMul _ expr1 mulop expr2 -> failure x
-  AbsAJ.EAdd _ 0 e -> e
-  AbsAJ.EAdd _ e 0 -> e
-  AbsAJ.EAdd _ (AbsAJ.Int a) (AbsAJ.Int b) -> AbsAJ.Int $ a + b
-  AbsAJ.EAdd p expr1 addop expr2 -> transAJr $ AbsAJ.EAdd p (transAJr expr1) (transAJr expr2)
-  AbsAJ.ERel _ expr1 relop expr2 -> transRelOp relop expr1 expr2
-  AbsAJ.EAnd _ expr1 expr2 -> failure x
-  AbsAJ.EOr _ expr1 expr2 -> failure x
+transExpr :: Expr -> Either [Char] Value
+transExpr x = case x of
+  EVar _ ident -> do
+    (var, loc, _) <- ask
+    l <- Map.lookup ident var
+    case l of
+      Nothing -> throwError "Not existing variable used"
+      Just lo -> do
+        x <- Map.lookup l loc
+        case x of
+          Nothing -> throwError "Not existing variable used"
+          Just xv -> xv 
+  EApp _ ident exprs -> Nothing   
+  AbsAJ.ELitInt _ integer -> Right $ VInt integer
+  AbsAJ.ELitTrue _ -> Right $ VBool True
+  AbsAJ.ELitFalse _ -> Right $ VBool False
+  AbsAJ.EString _ string -> Right $ VString string
+  Neg _ expr -> case transExpr expr of
+    Right (VInt int) -> Right $ VInt $ -int
+    _ -> throwError "Wrong type for negative opearation"
+  Not _ expr -> case transExpr expr of
+    Right (VBool True) -> Right $ VBool False
+    Right (VBool False) -> Right $ VBool True
+    _ -> throwError "Wrong type for not opearation"
+  EMul _ expr1 mulop expr2 -> transMulOp mulop expr1 expr2
+  EAdd _ a op b -> transAddOp op a b
+  ERel _ expr1 relop expr2 -> Right $ transRelOp relop expr1 expr2
+  EAnd _ expr1 expr2 -> case transExpr expr1 of
+    Right (VBool True) -> case transExpr expr2 of
+      Right (VBool True) -> Right $ VBool True
+      _ -> Right $ VBool False
+    _ -> Right $ VBool False
+  EOr _ expr1 expr2 -> case transExpr expr1 of
+    Right (VBool True) -> Right $ VBool True
+    _ -> case transExpr expr2 of
+      Right (VBool True) -> Right $ VBool True
+      _ -> Right $ VBool True
 
-transAddOp :: Show a => AbsAJ.AddOp' a -> Result
-transAddOp x = case x of
-  AbsAJ.Plus _ -> failure x
-  AbsAJ.Minus _ -> failure x
+transAddOp :: AddOp -> Expr -> Expr -> Either [Char] Value
+transAddOp x a b = case transExpr a of
+  Right (VInt av) -> case transExpr b of
+    Right (VInt bv) -> case x of
+      Plus _ -> Right $ VInt $ av + bv
+      Minus _ -> Right  $VInt $ av - bv
+    _ -> throwError umt
+  Right (VString as) -> case transExpr b of
+    Right (VString bs) -> case x of
+      Plus _ -> Right $ VString $ as + bs
+      _ -> throwError "Not allowed opeartion on strings: -"
+    _ -> throwError umt
+  _ -> throwError $ "Using bool in opeartion" ++ show x
 
-transMulOp :: Show a => AbsAJ.MulOp' a -> AbsAJ.Int
-transMulOp x a b = case x of
-  AbsAJ.Times _ -> a * b
-  AbsAJ.Div _ -> a / b
-  AbsAJ.Mod _ -> a % b
+transMulOp :: MulOp -> Expr -> Expr -> Either [Char] Value
+transMulOp x a b = case transExpr a of
+  Right (VInt av) -> case transExpr b of
+    Right (VInt 0) -> case x of
+      Times _ -> Right $ VInt av
+      Div p -> throwError $ "Not allowed opearation div with integer 0" ++ show p
+      Mod p -> throwError $ "Not allowed opearation mod with integer 0" ++ show p
+    Right (VInt bv) -> case x of
+      Times _ -> Right $ VInt $ av * bv
+      Div _ -> Right $ VInt $ av / bv
+      Mod _ -> Right $ VInt $ mod av bv
+    _ -> throwError umt
+  _ -> throwError "Wrong variable type for operation"
 
-transRelOp :: Show a => AbsAJ.RelOp' a -> AbsAJ.AJr' a -> AbsAJ.AJr' a -> Either ELitFalse ELitTrue
+transRelOp :: RelOp -> Expr -> Expr -> Value
 transRelOp x a b = case x of
-  AbsAJ.LTH _ -> a < b
-  AbsAJ.LE _ -> a <= b
-  AbsAJ.GTH _ -> a > b
-  AbsAJ.GE _ -> a >= b
-  AbsAJ.EQU _ -> a == b
-  AbsAJ.NE _ -> a != b
+  LTH _ -> VBool $ transExpr a < transExpr b
+  LE _ -> VBool $ transExpr a <= transExpr b
+  GTH _ -> VBool $ transExpr a > transExpr b
+  GE _ -> VBool $ transExpr a >= transExpr b
+  EQU _ -> VBool $ transExpr a == transExpr b
+  NE _ -> VBool $ transExpr a /= transExpr b
