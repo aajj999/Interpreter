@@ -24,8 +24,7 @@ które mają za zadanie zilustrować działanie interpretera w sytuacjach wyjąt
  Przykładami takich sytuacji są:  
  -błędy składniowe  
  -nieznane identyfikatory i nazwy funkcji  
- -zła liczba argumentów  
- -błędy typów  
+ -zła liczba argumentów
  -błędy czasu wykonania (np. dzielenie przez zero)
 
 ## Sposób użycia:  

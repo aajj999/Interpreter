@@ -3,7 +3,11 @@
 -interpreter
 -unused rules in parser
 -where which variables visible
--display errors - find more situations of errors
+-display errors + find more situations of errors + positions
+-printing by other functions
+-test on students
+-read task again
+-06-functions not working!!
 
 -name of folder
 -delete useless files
