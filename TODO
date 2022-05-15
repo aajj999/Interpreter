@@ -3,7 +3,7 @@
 -interpreter
 -unused rules in parser
 -where which variables visible
--errors display
+-display errors - find more situations of errors
 
 -name of folder
 -delete useless files

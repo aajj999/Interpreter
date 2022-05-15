@@ -19,25 +19,28 @@ data Function = VFunc Type [Arg] Block
 type Functions = Map.Map Ident Function
 
 type Env = (Variables, Locations, Functions)
-type AM a = ReaderT Env (ExceptT String (StateT Locations IO)) a
 
-err :: IO()
-err = putStrLn "Error"
-
+umt :: [Char]
 umt = "Unmatching types"
 
 env :: Variables -> Locations -> Functions -> Env
 env var loc fun = (var, loc, fun)
 
 newLoc :: Locations -> Location
-newLoc l = if Map.null l then 0 else (do
+newLoc l = if Map.null l then 1 else (do
            let p = foldr1 (\x y ->if x >= y then x else y) $ Map.keys l
            p + 1)
 
 interpret :: Program -> IO()
 interpret (Program _ globals topdefs) = do
   let e = execState (transGlobals globals) (env Map.empty Map.empty Map.empty)
-  evalState (transTopDefs topdefs) e
+  let (result, (var, loc, fun)) = runState (transTopDefs topdefs) e
+  result
+  let ret = Map.lookup 0 loc
+  case ret of
+    Just (VInt r) -> do
+      putStrLn $ "Main result: " ++ show r
+    _ -> putStrLn "Main result: 0"
 
 transGlobals :: [Global] -> State Env ()
 transGlobals [] = return()
@@ -49,37 +52,47 @@ transGlobal :: Global -> State Env ()
 transGlobal x = case x of
   GlobalDef _ t id expr -> do
     e <- get
-    let val = evalState (transExpr expr) e
+    let (val, (var, loc, fun)) = runState (transExpr expr) e
     case val of
       Left _ -> return()
       Right val -> do
-        (var, loc, fun) <- get
         let l = newLoc loc
         let var' = Map.insert id l var
         let loc' = Map.insert l val loc
         put (var', loc', fun)
 
 transTopDefs :: [TopDef] -> State Env (IO ())
-transTopDefs [] = return $ putStrLn ""
+transTopDefs [] = return $ putStr ""
 transTopDefs (x : xs) = do
   case x of
     FnDef _ t (Ident "main") args block -> do
-      transTopDef x
+      (var, loc, fun) <- get
+      let (r, v) = runState (transTopDef x) (var, loc, fun)
+      put v
+      return r
     FnDef _ t id args block -> do
       (var, loc, fun) <- get
       let fun' = Map.insert id (VFunc t args block) fun
       put (var, loc, fun')
-      transTopDefs xs
+      return $ evalState (transTopDef x) (var, loc, fun')
 
 transTopDef :: TopDef -> State Env (IO())
 transTopDef (FnDef p _ _  _ b) = do
-  gets (evalState (transStmt $ BStmt p  b))
+  v <- get
+  let (ret, v') = runState (transStmt $ BStmt p b) v
+  put v'
+  return ret
 
 transBlock :: [Stmt] -> State Env(IO ())
 transBlock [] = return $ putStr ""
 transBlock (s : ss) = do
-  transStmt s
-  transBlock ss
+  e <- get
+  let (ret, (var, loc, fun)) = runState (transStmt s) e
+  let (ret2, (_, loc', fun')) = runState (transBlock ss) (var, loc, fun)
+  put(var, loc', fun')
+  return do
+    ret
+    ret2
 
 transStmt :: Stmt -> State Env (IO())
 transStmt x = case x of
@@ -88,14 +101,17 @@ transStmt x = case x of
     Block p [] -> return $ putStr ""
     Block p ss -> do
       (var, loc, fun) <- get
-      transBlock ss
-      put (var, loc, fun)
-      return $ putStr ""
+      let (ret, (var', loc', fun')) =  runState (transBlock ss) (var, loc, fun)
+      put (var, loc', fun')
+      return ret
   Decl p t items -> case items of
     [] -> return $ putStr ""
     (i : is) -> do
-      transItem t i
-      transStmt $ Decl p t is
+      e <- get
+      let e' = execState (transItem t i) e
+      put $ execState (transStmt $ Decl p t is) e'
+      (var, loc, fun) <- get
+      return $ putStrLn ""
   Ass _ ident expr -> do
     (var, loc, fun) <- get
     let l = Map.lookup ident var
@@ -115,11 +131,11 @@ transStmt x = case x of
       Just lo -> do
         let val = Map.lookup lo loc
         case val of
-          Nothing -> return $ putStr ""
-          Just valv -> do
-            let loc' = Map.insert lo (valv + 1) loc
+          Just (VInt valv) -> do
+            let loc' = Map.insert lo (VInt (valv + 1)) loc
             put (var, loc', fun)
             return $ putStr ""
+          _ -> return $ putStr ""
   Decr _ ident -> do
     (var, loc, fun) <- get
     let l = Map.lookup ident var
@@ -128,17 +144,64 @@ transStmt x = case x of
       Just lo -> do
         let val = Map.lookup lo loc
         case val of
-          Nothing -> return $ putStr ""
-          Just valv -> do
-            let loc' = Map.insert lo (valv + 1) loc
+          Just (VInt valv) -> do
+            let loc' = Map.insert lo (VInt (valv - 1)) loc
             put (var, loc', fun)
             return $ putStr ""
-  Ret _ expr -> err
-  Cond _ expr stmt -> err
-  CondElse _ expr stmt1 stmt2 -> err
-  While _ expr stmt -> err
-  SExp _ expr -> err
-  Print _ expr -> return $ print expr
+          _ -> return $ putStr ""
+  Ret _ expr -> do
+    (var, loc, fun) <- get
+    case evalState (transExpr expr) (var, loc, fun) of
+      Right ret -> do
+        let loc' = Map.insert 0 ret loc
+        put(var, loc', fun)
+        return $ putStr ""
+      _ -> return $ putStr ""
+  Cond _ expr stmt -> do
+    e <- get
+    case evalState (transExpr expr) e of
+      Right (VBool True) -> do
+        let (ret, (var, loc, fun)) = runState (transStmt stmt) e
+        put (var, loc, fun)
+        return ret
+      _ -> return $ putStr ""
+  CondElse _ expr stmt1 stmt2 -> do
+    e <- get
+    case evalState (transExpr expr) e of
+      Right (VBool True) -> do
+        let (ret, (var, loc, fun)) = runState (transStmt stmt1) e
+        put (var, loc, fun)
+        return ret
+      Right (VBool False) -> do
+        let (ret, (var, loc, fun)) = runState (transStmt stmt2) e
+        put (var, loc, fun)
+        return ret
+      _ -> return $ putStr ""
+  While _ expr stmt -> do
+    e <- get
+    case evalState (transExpr expr) e of
+      Right (VBool True) -> do
+        let(ret1, (var, loc, fun)) = runState (transStmt stmt) e
+        let(ret2, (var', loc', fun')) = runState (transStmt x) (var, loc, fun)
+        put(var', loc', fun')
+        return $ do
+          ret1
+          ret2
+      Right (VBool False) -> do
+        let (var, loc, _) = e
+        return $ putStrLn ""
+      _ -> return $ putStr ""
+  SExp _ expr -> do
+    e <- get
+    put $ execState (transExpr expr) e
+    return $ putStr ""
+  Print _ expr -> do
+    e <- get
+    case evalState (transExpr expr) e of
+      Right (VString val) -> return $ print val
+      Right (VInt val) -> return $ print val
+      Right (VBool val) -> return $ print val
+      _ -> return $ putStr ""
 
 transItem :: Type -> Item -> State Env ()
 transItem t x = case x of
@@ -217,14 +280,7 @@ transArg :: Show a => Arg' a -> IO()
 transArg x = case x of
   Arg _ type_ ident -> err
   InArg _ type_ ident -> err
-  OutArg _ type_ ident -> err
-
-transBlock :: Block -> Env -> IO()
-transBlock x v = case x of
-  Block _ stmts -> do
-    save env
-    transStmt stmts
-    put odl env-}
+  OutArg _ type_ ident -> err-}
 
 transAddOp :: AddOp -> Expr -> Expr -> State Env (Either [Char] Value)
 transAddOp x a b = do
@@ -258,7 +314,7 @@ transMulOp x a b = do
       _ -> return $ throwError umt
     _ -> return $ throwError "Wrong variable type for operation"
 
-transRelOp :: RelOp -> Expr -> Expr -> State Env (Value)
+transRelOp :: RelOp -> Expr -> Expr -> State Env Value
 transRelOp x a b = do
   e <- get
   case evalState (transExpr a) e of
