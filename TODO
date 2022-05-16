@@ -3,7 +3,6 @@ Before sending:
 -delete useless files
 -zip Anna_Jablonowska.zip
 -check all good examples on students
--/home/students/inf/PUBLIC/MRJP/bin/ dodać do bnfc
 
 For 2. round:
 -where which variables visible
@@ -12,3 +11,5 @@ For 2. round:
 -printing by other functions not working
 -finish function on return
 -unused rules in parser
+-good/07-arg czm się wypisuje wynik funkcji?!
+-even nie działa
