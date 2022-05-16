@@ -3,9 +3,7 @@ Before sending:
 -delete useless files
 -zip Anna_Jablonowska.zip
 -check all good examples on students
-
-To do now:
--print errors (or delete + in table)
+-/home/students/inf/PUBLIC/MRJP/bin/ dodać do bnfc
 
 For 2. round:
 -where which variables visible

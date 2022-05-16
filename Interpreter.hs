@@ -10,6 +10,7 @@ import Distribution.Simple.Setup (trueArg)
 import Control.Monad.Except
 import Control.Monad.State
 import Distribution.Compat.Lens (_1, view)
+import Control.Exception (throw)
 
 type Location = Int
 data Value = VInt Integer | VBool Bool | VString String deriving Show
@@ -31,15 +32,19 @@ data Err =
   WrongArgs BNFC'Position |
   NotType Type BNFC'Position 
 
+showP :: BNFC'Position -> String
+showP Nothing = ""
+showP (Just(a, b)) = "Row " ++ show a ++ " Column " ++ show b
+
 instance Show Err where
-  show (UnmatchingTypes p) = "Unmatching types in operation " ++ show p
-  show (NotExisting id p) = "Not existing ident used " ++ show id ++ " " ++ show p
-  show (NegOp p) = "Wrong type for negative opearation " ++ show p
-  show (NotAllowed p) = "Not allowed operation on strings: - " ++ show p
-  show (NotOp p) = "Wrong type for not opearation " ++ show p
-  show (Div0 p) = "Not allowed opearation div with integer 0 " ++ show p
-  show (WrongArgs p) = "Wrong amount of arguments for the function " ++ show p
-  show (NotType t p) = "Wrong type " ++ show t ++ " " ++ show p
+  show (UnmatchingTypes p) = "Unmatching types in operation " ++ showP p
+  show (NotExisting id p) = "Not existing ident used " ++ show id ++ " " ++ showP p
+  show (NegOp p) = "Wrong type for negative opearation " ++ showP p
+  show (NotAllowed p) = "Not allowed operation on strings: - " ++ showP p
+  show (NotOp p) = "Wrong type for not opearation " ++ showP p
+  show (Div0 p) = "Not allowed opearation div with integer 0 " ++ showP p
+  show (WrongArgs p) = "Wrong amount of arguments for the function " ++ showP p
+  show (NotType t p) = "Wrong type " ++ show t ++ " " ++ showP p
 
 type ErrM = Either Err
 
@@ -57,7 +62,7 @@ interpret (Program _ globals topdefs) = do
   let (result, (var, loc, fun)) = runState (transTopDefs topdefs) e
   res <- runExceptT result
   case res of
-    Right () -> putStr "uuu"
+    Right () -> putStr ""
     Left err -> print err
   let ret = Map.lookup 0 loc
   case ret of
@@ -129,18 +134,21 @@ transStmt x = case x of
       put (var, loc', fun')
       return ret
   Decl p t items -> case items of
-    [] -> return $  liftIO $ putStr ""
+    [] -> return $ liftIO $ putStr ""
     (i : is) -> do
       e <- get
-      let e' = execState (transItem t i) e
-      put $ execState (transStmt $ Decl p t is) e'
-      (var, loc, fun) <- get
-      return $ liftIO $ putStr ""
-  Ass _ ident expr -> do
+      let(ret, e') = runState (transItem t i) e
+      case ret of
+        Left err -> return $ liftIO $ print err
+        _ -> do
+          let (ret2, e'') = runState (transStmt $ Decl p t is) e'
+          put e''
+          return ret2
+  Ass p ident expr -> do
     (var, loc, fun) <- get
     let l = Map.lookup ident var
     case l of
-      Nothing -> return $ liftIO $ putStr ""
+      Nothing -> return $ throwError $ NotExisting ident p
       Just lo -> do
         case evalState (transExpr expr) (var, loc, fun) of
           Right x -> do
@@ -148,11 +156,11 @@ transStmt x = case x of
             put (var, loc', fun)
             return $ liftIO $ putStr ""
           Left err -> return $ liftIO $ print err
-  Incr _ ident -> do
+  Incr p ident -> do
     (var, loc, fun) <- get
     let l = Map.lookup ident var
     case l of
-      Nothing -> return $ liftIO $ putStr ""
+      Nothing -> return $ throwError $ NotExisting ident p
       Just lo -> do
         let val = Map.lookup lo loc
         case val of
@@ -161,11 +169,11 @@ transStmt x = case x of
             put (var, loc', fun)
             return $ liftIO $ putStr ""
           _ -> return $ throwError $ NotOp Nothing
-  Decr _ ident -> do
+  Decr p ident -> do
     (var, loc, fun) <- get
     let l = Map.lookup ident var
     case l of
-      Nothing -> return $ liftIO $ putStr ""
+      Nothing -> return $ throwError $ NotExisting ident p
       Just lo -> do
         let val = Map.lookup lo loc
         case val of
@@ -173,7 +181,7 @@ transStmt x = case x of
             let loc' = Map.insert lo (VInt (valv - 1)) loc
             put (var, loc', fun)
             return $ liftIO $ putStr ""
-          _ -> return $ liftIO $ putStr ""
+          _ -> return $ throwError $ NotExisting ident p
   Ret _ expr -> do
     (var, loc, fun) <- get
     case evalState (transExpr expr) (var, loc, fun) of
@@ -181,16 +189,17 @@ transStmt x = case x of
         let loc' = Map.insert 0 ret loc
         put(var, loc', fun)
         return $ liftIO $ putStr ""
-      _ -> return $ liftIO $ putStr ""
-  Cond _ expr stmt -> do
+      Left err -> return $ liftIO $ print err
+  Cond p expr stmt -> do
     e <- get
     case evalState (transExpr expr) e of
       Right (VBool True) -> do
         let (ret, (var, loc, fun)) = runState (transStmt stmt) e
         put (var, loc, fun)
         return ret
-      _ -> return $ liftIO $ putStr ""
-  CondElse _ expr stmt1 stmt2 -> do
+      Left err -> return $ liftIO $ print err
+      _ -> return $ throwError $ NotAllowed p
+  CondElse p expr stmt1 stmt2 -> do
     e <- get
     case evalState (transExpr expr) e of
       Right (VBool True) -> do
@@ -201,7 +210,8 @@ transStmt x = case x of
         let (ret, (var, loc, fun)) = runState (transStmt stmt2) e
         put (var, loc, fun)
         return ret
-      _ -> return $ liftIO $ putStr ""
+      Left err -> return $ liftIO $ print err
+      _ -> return $ throwError $ NotAllowed p
   While _ expr stmt -> do
     e <- get
     case evalState (transExpr expr) e of
@@ -215,18 +225,22 @@ transStmt x = case x of
       Right (VBool False) -> do
         let (var, loc, _) = e
         return $ liftIO $ putStr ""
-      _ -> return $ liftIO $ putStr ""
+      Left err -> return $ liftIO $ print err
+      _ -> return $ throwError $ UnmatchingTypes Nothing
   SExp _ expr -> do
     e <- get
-    put $ execState (transExpr expr) e
-    return $ liftIO $ putStr ""
+    let (r, e') = runState (transExpr expr) e
+    put e'
+    case r of
+      Left err -> return $ liftIO $ print err
+      Right v -> return $ liftIO $ print v
   Print _ expr -> do
     e <- get
     case evalState (transExpr expr) e of
       Right (VString val) -> return $ liftIO $ print val
       Right (VInt val) -> return $ liftIO $ print val
       Right (VBool val) -> return $ liftIO $ print val
-      _ -> return $ liftIO $ putStr ""
+      Left err -> return $ liftIO $ print err
 
 transItem :: Type -> Item -> State Env (ErrM String)
 transItem t x = case x of
@@ -281,12 +295,14 @@ transExpr x = do
     EAdd _ a op b -> return $ evalState (transAddOp op a b) e
     ERel _ expr1 relop expr2 -> case evalState (transRelOp relop expr1 expr2) e of
       Right v -> return $ Right v
-      Left err -> return $ Left $ err
-    EAnd _ expr1 expr2 -> case evalState (transExpr expr1) e of
+      Left err -> return $ Left err
+    EAnd p expr1 expr2 -> case evalState (transExpr expr1) e of
       Right (VBool True) -> case evalState (transExpr expr2) e of
         Right (VBool True) -> return $ Right $ VBool True
-        _ -> return $ Right $ VBool False
-      _ -> return $ Right $ VBool False
+        Right (VBool False) -> return $ Right $ VBool False
+        _ -> return $ throwError $ NotAllowed p
+      Right(VBool False) -> return $ Right $ VBool False
+      _ -> return $ throwError $ NotAllowed p
     EOr _ expr1 expr2 -> case evalState (transExpr expr1) e of
       Right (VBool True) -> return $ Right $ VBool True
       _ -> case evalState (transExpr expr2) e of
@@ -307,13 +323,15 @@ transExpr x = do
       case Map.lookup ident fun of
         Nothing -> return $ throwError $ NotExisting ident p
         Just (VFunc t args b) -> do
-          let (var', loc', _) = execState (transArgs args exprs) (var, loc, fun)
-          let (ret, (var'', loc'', fun'')) = runState (transStmt (BStmt p b)) (var', loc', fun)
-          put(var, loc'', fun)
-          return case Map.lookup 0 loc'' of
-            Nothing -> do
-              Right $ VInt 0
-            Just v -> Right v
+          let (r, (var', loc', _)) = runState (transArgs args exprs) (var, loc, fun)
+          case r of
+            Left err -> return $ Left err
+            _ -> do
+              let (ret, (var'', loc'', fun'')) = runState (transStmt (BStmt p b)) (var', loc', fun)
+              put(var, loc'', fun)
+              return case Map.lookup 0 loc'' of
+                Nothing -> throwError $ NotExisting ident p
+                Just v -> Right v
 
 transArgs :: [Arg] -> [Expr] -> State Env (ErrM String)
 transArgs [] [] = return $ Right ""

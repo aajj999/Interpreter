@@ -1,5 +1,5 @@
 int main (){
-    bool b = true;
+    bool b = True;
     int i = 5;
     string s = "Anna";
 
