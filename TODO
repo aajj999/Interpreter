@@ -1,13 +1,16 @@
--good examples
--bad examples with types - to delete?
--interpreter
--unused rules in parser
--where which variables visible
--display errors + find more situations of errors + positions
--printing by other functions
--test on students
--read task again
--06-functions not working!!
-
--name of folder
+Before sending:
+-name of folder Anna_Jablonowska
 -delete useless files
+-zip Anna_Jablonowska.zip
+-check all good examples on students
+
+To do now:
+-print errors (or delete + in table)
+
+For 2. round:
+-where which variables visible
+-find more situations of errors (lack of return in function)
+-always display positions of errors
+-printing by other functions not working
+-finish function on return
+-unused rules in parser

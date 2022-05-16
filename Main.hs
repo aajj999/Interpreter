@@ -40,8 +40,8 @@ run p s =
       putStrLn err
       exitFailure
     Right tree -> do
-      putStrLn "\nParse Successful!"
-      showTree tree
+      --putStrLn "\nParse Successful!"
+      --showTree tree
       interpret tree
   where
   ts = myLexer s

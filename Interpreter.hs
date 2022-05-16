@@ -57,7 +57,7 @@ interpret (Program _ globals topdefs) = do
   let (result, (var, loc, fun)) = runState (transTopDefs topdefs) e
   res <- runExceptT result
   case res of
-    Right () -> putStr ""
+    Right () -> putStr "uuu"
     Left err -> print err
   let ret = Map.lookup 0 loc
   case ret of
@@ -98,7 +98,7 @@ transTopDefs (x : xs) = do
       (var, loc, fun) <- get
       let fun' = Map.insert id (VFunc t args block) fun
       put (var, loc, fun')
-      return $ evalState (transTopDef x) (var, loc, fun')
+      return $ evalState (transTopDefs xs) (var, loc, fun')
 
 transTopDef :: TopDef -> State Env (ExceptT Err IO())
 transTopDef (FnDef p _ _  _ b) = do
@@ -311,7 +311,8 @@ transExpr x = do
           let (ret, (var'', loc'', fun'')) = runState (transStmt (BStmt p b)) (var', loc', fun)
           put(var, loc'', fun)
           return case Map.lookup 0 loc'' of
-            Nothing -> Right $ VInt 0
+            Nothing -> do
+              Right $ VInt 0
             Just v -> Right v
 
 transArgs :: [Arg] -> [Expr] -> State Env (ErrM String)
@@ -329,12 +330,30 @@ transArg a e = do
   let val = evalState (transExpr e) (var, loc, fun)
   case val of
     Right v -> do
-      let Arg _ t id = a
-      let l = newLoc loc
-      let var' = Map.insert id l var
-      let loc' = Map.insert l v loc
-      put (var', loc', fun)
-      return ()
+      case a of
+        Arg _ t id -> do
+          let l = newLoc loc
+          let var' = Map.insert id l var
+          let loc' = Map.insert l v loc
+          put (var', loc', fun)
+          return ()
+        InArg _ t id -> do
+          let l = newLoc loc
+          let var' = Map.insert id l var
+          let loc' = Map.insert l v loc
+          put (var', loc', fun)
+          return ()
+        OutArg _ t id -> do
+          case e of
+            EVar _ out -> do
+              let l = Map.lookup out var
+              case l of
+                Just lo -> do
+                  let var' = Map.insert id lo var
+                  put (var', loc, fun)
+                  return()
+                _ -> return()
+            _ -> return()
     _ -> return ()
 
 transAddOp :: AddOp -> Expr -> Expr -> State Env (ErrM Value)

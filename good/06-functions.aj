@@ -1,10 +1,10 @@
-int function(int a){
-    print "Text from a function";
-    return (a + 3);
+int function(){
+    return 3;
 }
 
 int main(){
-    int b = function(2);
-    print b;
+    int a = function();
+    print a;
+
     return 0;
 }
